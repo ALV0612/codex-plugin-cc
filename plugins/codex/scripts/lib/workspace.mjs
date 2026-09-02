@@ -11,7 +11,7 @@ export function resolveWorkspaceRoot(cwd) {
       try {
         const markerPath = path.join(current, ".git");
         const markerStats = fs.statSync(markerPath);
-        const validGitFile = markerStats.isFile() && /^gitdir:\s*\S/m.test(fs.readFileSync(markerPath, "utf8"));
+        const validGitFile = markerStats.isFile() && /^gitdir:[ \t]+\S/.test(fs.readFileSync(markerPath, "utf8"));
         if (markerStats.isDirectory() || validGitFile) {
           return fs.realpathSync.native(current);
         }

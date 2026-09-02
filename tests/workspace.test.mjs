@@ -53,6 +53,18 @@ test("resolveWorkspaceRoot ignores an ordinary file named .git", () => {
   assert.equal(resolveWorkspaceRoot(cwd), outer.workspace);
 });
 
+for (const invalidMarker of ["gitdir:/tmp/metadata\n", "metadata\ngitdir: /tmp/metadata\n"]) {
+  test(`resolveWorkspaceRoot rejects malformed gitfile ${JSON.stringify(invalidMarker)}`, () => {
+    const outer = makeNestedWorkspace("directory");
+    const nestedWorkspace = path.join(outer.workspace, "vendor", "not-a-repo");
+    const cwd = path.join(nestedWorkspace, "src");
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.writeFileSync(path.join(nestedWorkspace, ".git"), invalidMarker, "utf8");
+
+    assert.equal(resolveWorkspaceRoot(cwd), outer.workspace);
+  });
+}
+
 test("resolveWorkspaceRoot follows a symlinked git directory", () => {
   const workspace = makeTempDir();
   const gitDirectory = makeTempDir();
