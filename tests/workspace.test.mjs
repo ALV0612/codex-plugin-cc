@@ -93,6 +93,40 @@ test("resolveWorkspaceRoot preserves comment characters inside quoted core.workt
   assert.equal(resolveWorkspaceRoot(cwd, { GIT_DIR: gitDirectory }), fs.realpathSync.native(worktree));
 });
 
+test("resolveWorkspaceRoot uses the final core.worktree value", () => {
+  const root = makeTempDir();
+  const cwd = path.join(root, "metadata");
+  const gitDirectory = path.join(cwd, ".git");
+  const staleWorktree = path.join(root, "stale");
+  const finalWorktree = path.join(root, "final");
+  fs.mkdirSync(gitDirectory, { recursive: true });
+  fs.mkdirSync(staleWorktree);
+  fs.mkdirSync(finalWorktree);
+  fs.writeFileSync(
+    path.join(gitDirectory, "config"),
+    `[core]\n  worktree = ${staleWorktree}\n  worktree = ${finalWorktree}\n`,
+    "utf8"
+  );
+  assert.equal(resolveWorkspaceRoot(cwd, { GIT_DIR: gitDirectory }), fs.realpathSync.native(finalWorktree));
+});
+
+for (const comment of ["# core options", "; core options"]) {
+  test(`resolveWorkspaceRoot accepts a comment after the core section header: ${comment}`, () => {
+    const root = makeTempDir();
+    const cwd = path.join(root, "metadata");
+    const gitDirectory = path.join(cwd, ".git");
+    const worktree = path.join(root, "external");
+    fs.mkdirSync(gitDirectory, { recursive: true });
+    fs.mkdirSync(worktree);
+    fs.writeFileSync(
+      path.join(gitDirectory, "config"),
+      `[user]\n  name = Example\n[core] ${comment}\n  worktree = ${worktree}\n`,
+      "utf8"
+    );
+    assert.equal(resolveWorkspaceRoot(cwd, { GIT_DIR: gitDirectory }), fs.realpathSync.native(worktree));
+  });
+}
+
 test("resolveWorkspaceRoot honors core.worktree from a marker git directory", () => {
   const metadata = makeTempDir();
   const gitDirectory = path.join(metadata, ".git");

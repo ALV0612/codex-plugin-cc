@@ -56,12 +56,14 @@ function parseConfigValue(value) {
 function readConfiguredWorkTree(gitDirectory) {
   const configPath = path.join(gitDirectory, "config");
   let section = "";
+  let workTree = null;
   for (const rawLine of fs.readFileSync(configPath, "utf8").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#") || line.startsWith(";")) {
       continue;
     }
-    const sectionMatch = /^\[([^\]]+)\]$/.exec(line);
+    const sectionLine = stripConfigComment(line).trim();
+    const sectionMatch = /^\[([^\]]+)\]$/.exec(sectionLine);
     if (sectionMatch) {
       section = sectionMatch[1].trim().toLowerCase();
       continue;
@@ -72,10 +74,10 @@ function readConfiguredWorkTree(gitDirectory) {
     const valueMatch = /^worktree\s*=\s*(.+)$/i.exec(line);
     if (valueMatch) {
       const value = parseConfigValue(valueMatch[1]);
-      return value ? path.resolve(gitDirectory, value) : null;
+      workTree = value ? path.resolve(gitDirectory, value) : null;
     }
   }
-  return null;
+  return workTree;
 }
 
 function configuredWorkTree(gitDirectory) {
