@@ -43,6 +43,16 @@ test("resolveWorkspaceRoot accepts a linked-worktree gitfile", () => {
   assert.equal(resolveWorkspaceRoot(nested), workspace);
 });
 
+test("resolveWorkspaceRoot follows a symlinked git directory", () => {
+  const workspace = makeTempDir();
+  const gitDirectory = makeTempDir();
+  const nested = path.join(workspace, "packages", "app");
+  fs.mkdirSync(nested, { recursive: true });
+  fs.symlinkSync(gitDirectory, path.join(workspace, ".git"), process.platform === "win32" ? "junction" : "dir");
+
+  assert.equal(resolveWorkspaceRoot(nested), fs.realpathSync.native(workspace));
+});
+
 test("resolveWorkspaceRoot selects the nearest nested working tree", () => {
   const { workspace } = makeNestedWorkspace("directory");
   const nestedWorkspace = path.join(workspace, "vendor", "nested");

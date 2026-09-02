@@ -9,7 +9,7 @@ export function resolveWorkspaceRoot(cwd) {
 
     while (true) {
       try {
-        const markerStats = fs.lstatSync(path.join(current, ".git"));
+        const markerStats = fs.statSync(path.join(current, ".git"));
         if (markerStats.isDirectory() || markerStats.isFile()) {
           return fs.realpathSync.native(current);
         }
