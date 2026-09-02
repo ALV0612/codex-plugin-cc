@@ -22,6 +22,7 @@ import {
     runAppServerTurn
   } from "./lib/codex.mjs";
 import { resolveClaudeSessionPath } from "./lib/claude-session-transfer.mjs";
+import { dispatchBackgroundJob } from "./lib/background-dispatch.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { collectReviewContext, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
 import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
@@ -677,36 +678,21 @@ function spawnDetachedTaskWorker(cwd, jobId) {
     stdio: "ignore",
     windowsHide: true
   });
-  child.unref();
   return child;
 }
 
-function enqueueBackgroundTask(cwd, job, request) {
+async function enqueueBackgroundTask(cwd, job, request) {
   const { logFile } = createTrackedProgress(job);
   appendLogLine(logFile, "Queued for background execution.");
 
-  const child = spawnDetachedTaskWorker(cwd, job.id);
-  const queuedRecord = {
-    ...job,
-    status: "queued",
-    phase: "queued",
-    pid: child.pid ?? null,
+  const payload = await dispatchBackgroundJob({
+    job,
+    request,
     logFile,
-    request
-  };
-  writeJobFile(job.workspaceRoot, job.id, queuedRecord);
-  upsertJob(job.workspaceRoot, queuedRecord);
+    spawnWorker: () => spawnDetachedTaskWorker(cwd, job.id)
+  });
 
-  return {
-    payload: {
-      jobId: job.id,
-      status: "queued",
-      title: job.title,
-      summary: job.summary,
-      logFile
-    },
-    logFile
-  };
+  return { payload, logFile };
 }
 
 async function handleReviewCommand(argv, config) {
@@ -799,7 +785,7 @@ async function handleTask(argv) {
       resumeLast,
       jobId: job.id
     });
-    const { payload } = enqueueBackgroundTask(cwd, job, request);
+    const { payload } = await enqueueBackgroundTask(cwd, job, request);
     outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
     return;
   }

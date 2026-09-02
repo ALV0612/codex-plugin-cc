@@ -140,6 +140,8 @@ function readStoredJobOrNull(workspaceRoot, jobId) {
 }
 
 export async function runTrackedJob(job, runner, options = {}) {
+  const writeJobFileImpl = options.writeJobFileImpl ?? writeJobFile;
+  const upsertJobImpl = options.upsertJobImpl ?? upsertJob;
   const runningRecord = {
     ...job,
     status: "running",
@@ -148,14 +150,13 @@ export async function runTrackedJob(job, runner, options = {}) {
     pid: process.pid,
     logFile: options.logFile ?? job.logFile ?? null
   };
-  writeJobFile(job.workspaceRoot, job.id, runningRecord);
-  upsertJob(job.workspaceRoot, runningRecord);
-
   try {
+    writeJobFileImpl(job.workspaceRoot, job.id, runningRecord);
+    upsertJobImpl(job.workspaceRoot, runningRecord);
     const execution = await runner();
     const completionStatus = execution.exitStatus === 0 ? "completed" : "failed";
     const completedAt = nowIso();
-    writeJobFile(job.workspaceRoot, job.id, {
+    writeJobFileImpl(job.workspaceRoot, job.id, {
       ...runningRecord,
       status: completionStatus,
       threadId: execution.threadId ?? null,
@@ -166,7 +167,7 @@ export async function runTrackedJob(job, runner, options = {}) {
       result: execution.payload,
       rendered: execution.rendered
     });
-    upsertJob(job.workspaceRoot, {
+    upsertJobImpl(job.workspaceRoot, {
       id: job.id,
       status: completionStatus,
       threadId: execution.threadId ?? null,
@@ -182,7 +183,7 @@ export async function runTrackedJob(job, runner, options = {}) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const existing = readStoredJobOrNull(job.workspaceRoot, job.id) ?? runningRecord;
     const completedAt = nowIso();
-    writeJobFile(job.workspaceRoot, job.id, {
+    writeJobFileImpl(job.workspaceRoot, job.id, {
       ...existing,
       status: "failed",
       phase: "failed",
@@ -191,7 +192,7 @@ export async function runTrackedJob(job, runner, options = {}) {
       completedAt,
       logFile: options.logFile ?? job.logFile ?? existing.logFile ?? null
     });
-    upsertJob(job.workspaceRoot, {
+    upsertJobImpl(job.workspaceRoot, {
       id: job.id,
       status: "failed",
       phase: "failed",
