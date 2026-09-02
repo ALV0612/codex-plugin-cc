@@ -486,6 +486,7 @@ async function executeTaskRun(request) {
   const result = await runAppServerTurn(workspaceRoot, {
     resumeThreadId,
     prompt: request.prompt,
+    preservePromptWhitespace: request.promptSource === "file",
     defaultPrompt: resumeThreadId ? DEFAULT_CONTINUE_PROMPT : "",
     model: request.model,
     effort: request.effort,
@@ -515,7 +516,7 @@ async function executeTaskRun(request) {
     rawOutput,
     touchedFiles: result.touchedFiles,
     reasoningSummary: result.reasoningSummary,
-    ...(request.promptSha256 ? { promptSha256: request.promptSha256 } : {})
+    ...(request.promptFileSha256 ? { promptFileSha256: request.promptFileSha256 } : {})
   };
 
   return {
@@ -603,13 +604,14 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, prompt, promptSha256 = null, write, resumeLast, jobId }) {
+function buildTaskRequest({ cwd, model, effort, prompt, promptSource, promptFileSha256 = null, write, resumeLast, jobId }) {
   return {
     cwd,
     model,
     effort,
     prompt,
-    ...(promptSha256 ? { promptSha256 } : {}),
+    promptSource,
+    ...(promptFileSha256 ? { promptFileSha256 } : {}),
     write,
     resumeLast,
     jobId
@@ -790,7 +792,8 @@ async function handleTask(argv) {
       model,
       effort,
       prompt,
-      promptSha256: promptInput.sha256,
+      promptSource: promptInput.source,
+      promptFileSha256: promptInput.sha256,
       write,
       resumeLast,
       jobId: job.id
@@ -809,7 +812,8 @@ async function handleTask(argv) {
         model,
         effort,
         prompt,
-        promptSha256: promptInput.sha256,
+        promptSource: promptInput.source,
+        promptFileSha256: promptInput.sha256,
         write,
         resumeLast,
         jobId: job.id,

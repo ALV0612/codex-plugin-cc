@@ -13,7 +13,7 @@ function sha256(bytes) {
 
 test("readTaskPromptInput verifies and decodes the same prompt-file bytes", () => {
   const cwd = makeTempDir();
-  const bytes = Buffer.from("review $HOME and `ticks`\n", "utf8");
+  const bytes = Buffer.from("  review $HOME and `ticks`  \n", "utf8");
   fs.writeFileSync(path.join(cwd, "prompt.txt"), bytes);
 
   const input = readTaskPromptInput(
