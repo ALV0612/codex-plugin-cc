@@ -138,8 +138,68 @@ function normalizeArgv(argv) {
   return argv;
 }
 
+function normalizeAdversarialReviewArgv(argv) {
+  if (argv.length !== 1) {
+    return argv;
+  }
+
+  const [raw] = argv;
+  if (!raw || !raw.trim()) {
+    return [];
+  }
+
+  const tokens = splitRawArgumentString(raw);
+  const normalized = [];
+  const valueOptions = new Set(["base", "scope", "model", "cwd"]);
+  const booleanOptions = new Set(["json", "background", "wait"]);
+  const aliasMap = { C: "cwd", m: "model" };
+
+  for (let index = 0; index < tokens.length;) {
+    const token = tokens[index];
+    if (token === "--") {
+      normalized.push(token);
+      if (index + 1 < tokens.length) {
+        normalized.push(tokens.slice(index + 1).join(" "));
+      }
+      return normalized;
+    }
+
+    let key = null;
+    let hasInlineValue = false;
+    if (token.startsWith("--")) {
+      const [rawKey, inlineValue] = token.slice(2).split("=", 2);
+      key = aliasMap[rawKey] ?? rawKey;
+      hasInlineValue = inlineValue !== undefined;
+    } else if (token.startsWith("-") && token !== "-") {
+      key = aliasMap[token.slice(1)] ?? token.slice(1);
+    }
+
+    if (booleanOptions.has(key)) {
+      normalized.push(token);
+      index += 1;
+      continue;
+    }
+
+    if (valueOptions.has(key)) {
+      normalized.push(token);
+      index += 1;
+      if (!hasInlineValue && index < tokens.length) {
+        normalized.push(tokens[index]);
+        index += 1;
+      }
+      continue;
+    }
+
+    normalized.push(tokens.slice(index).join(" "));
+    return normalized;
+  }
+
+  return normalized;
+}
+
 function parseCommandInput(argv, config = {}) {
-  return parseArgs(normalizeArgv(argv), {
+  const argvNormalizer = config.argvNormalizer ?? normalizeArgv;
+  return parseArgs(argvNormalizer(argv), {
     ...config,
     aliasMap: {
       C: "cwd",
@@ -715,7 +775,10 @@ async function handleReviewCommand(argv, config) {
     booleanOptions: ["json", "background", "wait"],
     aliasMap: {
       m: "model"
-    }
+    },
+    ...(config.opaqueFocus
+      ? { argvNormalizer: normalizeAdversarialReviewArgv, stopAtFirstPositional: true }
+      : {})
   });
 
   const cwd = resolveCommandCwd(options);
@@ -1037,7 +1100,8 @@ async function main() {
       break;
     case "adversarial-review":
       await handleReviewCommand(argv, {
-        reviewName: "Adversarial Review"
+        reviewName: "Adversarial Review",
+        opaqueFocus: true
       });
       break;
     case "task":

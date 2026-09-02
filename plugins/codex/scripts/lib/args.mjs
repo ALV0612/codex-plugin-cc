@@ -5,6 +5,7 @@ export function parseArgs(argv, config = {}) {
   const options = {};
   const positionals = [];
   let passthrough = false;
+  const stopAtFirstPositional = Boolean(config.stopAtFirstPositional);
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -21,6 +22,7 @@ export function parseArgs(argv, config = {}) {
 
     if (!token.startsWith("-") || token === "-") {
       positionals.push(token);
+      passthrough = stopAtFirstPositional;
       continue;
     }
 
@@ -46,6 +48,7 @@ export function parseArgs(argv, config = {}) {
       }
 
       positionals.push(token);
+      passthrough = stopAtFirstPositional;
       continue;
     }
 
@@ -68,6 +71,7 @@ export function parseArgs(argv, config = {}) {
     }
 
     positionals.push(token);
+    passthrough = stopAtFirstPositional;
   }
 
   return { options, positionals };
