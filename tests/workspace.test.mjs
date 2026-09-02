@@ -16,7 +16,9 @@ function makeNestedWorkspace(gitMarker) {
   if (gitMarker === "directory") {
     fs.mkdirSync(path.join(workspace, ".git"));
   } else {
-    fs.writeFileSync(path.join(workspace, ".git"), "gitdir: /tmp/example.git\n", "utf8");
+    const gitDirectory = path.join(workspace, "metadata.git");
+    fs.mkdirSync(gitDirectory);
+    fs.writeFileSync(path.join(workspace, ".git"), "gitdir: metadata.git\n", "utf8");
   }
   return { workspace: fs.realpathSync.native(workspace), nested };
 }
@@ -53,7 +55,7 @@ test("resolveWorkspaceRoot ignores an ordinary file named .git", () => {
   assert.equal(resolveWorkspaceRoot(cwd), outer.workspace);
 });
 
-for (const invalidMarker of ["gitdir:/tmp/metadata\n", "gitdir:\t/tmp/metadata\n", "metadata\ngitdir: /tmp/metadata\n"]) {
+for (const invalidMarker of ["gitdir:/tmp/metadata\n", "gitdir:\t/tmp/metadata\n", "metadata\ngitdir: /tmp/metadata\n", "gitdir: missing.git\n"]) {
   test(`resolveWorkspaceRoot rejects malformed gitfile ${JSON.stringify(invalidMarker)}`, () => {
     const outer = makeNestedWorkspace("directory");
     const nestedWorkspace = path.join(outer.workspace, "vendor", "not-a-repo");
