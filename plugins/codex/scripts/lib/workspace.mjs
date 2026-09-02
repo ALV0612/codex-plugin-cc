@@ -18,6 +18,41 @@ function resolveGitDirectory(candidatePath) {
   return fs.statSync(target).isDirectory() ? fs.realpathSync.native(target) : null;
 }
 
+function stripConfigComment(value) {
+  let quote = null;
+  let escaping = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "#" || character === ";") {
+      return value.slice(0, index).trimEnd();
+    }
+  }
+  return value;
+}
+
+function parseConfigValue(value) {
+  const uncommented = stripConfigComment(value).trim();
+  const quoted = /^(?:"((?:\\.|[^"\\])*)"|'([^']*)')$/.exec(uncommented);
+  if (!quoted) return uncommented;
+  return (quoted[1] ?? quoted[2]).replace(/\\([\\"])/g, "$1");
+}
+
 function readConfiguredWorkTree(gitDirectory) {
   const configPath = path.join(gitDirectory, "config");
   let section = "";
@@ -36,8 +71,8 @@ function readConfiguredWorkTree(gitDirectory) {
     }
     const valueMatch = /^worktree\s*=\s*(.+)$/i.exec(line);
     if (valueMatch) {
-      const value = valueMatch[1].trim().replace(/^(?:"(.*)"|'(.*)')$/, "$1$2");
-      return path.resolve(gitDirectory, value);
+      const value = parseConfigValue(valueMatch[1]);
+      return value ? path.resolve(gitDirectory, value) : null;
     }
   }
   return null;

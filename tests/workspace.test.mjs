@@ -66,6 +66,33 @@ test("resolveWorkspaceRoot honors core.worktree from GIT_DIR config", () => {
   assert.equal(resolveWorkspaceRoot(cwd, { GIT_DIR: gitDirectory }), fs.realpathSync.native(worktree));
 });
 
+test("resolveWorkspaceRoot strips inline comments outside quoted core.worktree values", () => {
+  const root = makeTempDir();
+  const cwd = path.join(root, "metadata", "nested");
+  const gitDirectory = path.join(root, "metadata", ".git");
+  const worktree = path.join(root, "work tree");
+  fs.mkdirSync(cwd, { recursive: true });
+  fs.mkdirSync(gitDirectory);
+  fs.mkdirSync(worktree);
+  fs.writeFileSync(
+    path.join(gitDirectory, "config"),
+    `[core]\n  worktree = "../../work tree" # external tree\n`,
+    "utf8"
+  );
+  assert.equal(resolveWorkspaceRoot(cwd, { GIT_DIR: gitDirectory }), fs.realpathSync.native(worktree));
+});
+
+test("resolveWorkspaceRoot preserves comment characters inside quoted core.worktree values", () => {
+  const root = makeTempDir();
+  const cwd = path.join(root, "metadata");
+  const gitDirectory = path.join(cwd, ".git");
+  const worktree = path.join(root, "work#tree");
+  fs.mkdirSync(gitDirectory, { recursive: true });
+  fs.mkdirSync(worktree);
+  fs.writeFileSync(path.join(gitDirectory, "config"), `[core]\n  worktree = "../../work#tree"\n`, "utf8");
+  assert.equal(resolveWorkspaceRoot(cwd, { GIT_DIR: gitDirectory }), fs.realpathSync.native(worktree));
+});
+
 test("resolveWorkspaceRoot honors core.worktree from a marker git directory", () => {
   const metadata = makeTempDir();
   const gitDirectory = path.join(metadata, ".git");
