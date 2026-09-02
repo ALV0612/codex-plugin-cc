@@ -73,6 +73,8 @@ export function readStdinIfPiped({
         return Buffer.concat(chunks).toString("utf8");
       }
       chunks.push(chunk.subarray(0, bytesRead));
+      transientAttempts = 0;
+      retryDelayMs = initialRetryDelayMs;
     } catch (error) {
       transientAttempts += 1;
       if (!isTransientReadError(error) || transientAttempts >= maxAttempts) {

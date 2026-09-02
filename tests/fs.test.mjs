@@ -32,6 +32,23 @@ test("readStdinIfPiped preserves bytes consumed before a transient read failure"
   assert.deepEqual(events.filter((event) => event[0] === "wait"), [["wait", 10]]);
 });
 
+test("readStdinIfPiped resets the transient retry budget after each successful chunk", () => {
+  const steps = [];
+  for (let index = 0; index < 10; index += 1) {
+    steps.push(`chunk-${index};`, transient());
+  }
+  steps.push(null);
+  const waits = [];
+  const input = readStdinIfPiped({
+    stdin: { isTTY: false },
+    readSync: scriptedRead(steps),
+    waitForRetry: (delay) => waits.push(delay),
+    maxAttempts: 2
+  });
+  assert.equal(input, Array.from({ length: 10 }, (_, index) => `chunk-${index};`).join(""));
+  assert.deepEqual(waits, Array(10).fill(10));
+});
+
 test("readStdinIfPiped treats EWOULDBLOCK as transient and bounds backoff", () => {
   const error = transient("EWOULDBLOCK");
   const waits = [];
