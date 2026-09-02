@@ -1,8 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export function resolveWorkspaceRoot(cwd) {
+export function resolveWorkspaceRoot(cwd, env = process.env) {
   try {
+    if (env?.GIT_DIR && env?.GIT_WORK_TREE) {
+      try {
+        const configuredGitDirectory = path.resolve(cwd, env.GIT_DIR);
+        const configuredWorkTree = path.resolve(cwd, env.GIT_WORK_TREE);
+        if (fs.statSync(configuredGitDirectory).isDirectory() && fs.statSync(configuredWorkTree).isDirectory()) {
+          return fs.realpathSync.native(configuredWorkTree);
+        }
+      } catch {
+        // Invalid Git environment overrides do not suppress normal marker discovery.
+      }
+    }
+
     const canonicalCwd = fs.realpathSync.native(cwd);
     const cwdStats = fs.statSync(canonicalCwd);
     let current = cwdStats.isFile() ? path.dirname(canonicalCwd) : canonicalCwd;

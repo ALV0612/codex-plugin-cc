@@ -23,6 +23,31 @@ function makeNestedWorkspace(gitMarker) {
   return { workspace: fs.realpathSync.native(workspace), nested };
 }
 
+test("resolveWorkspaceRoot honors an environment-configured work tree without a .git marker", () => {
+  const worktree = makeTempDir();
+  const gitDirectory = makeTempDir();
+  const nested = path.join(worktree, "packages", "app");
+  fs.mkdirSync(nested, { recursive: true });
+
+  assert.equal(
+    resolveWorkspaceRoot(nested, { GIT_DIR: gitDirectory, GIT_WORK_TREE: "../.." }),
+    fs.realpathSync.native(worktree)
+  );
+});
+
+test("resolveWorkspaceRoot ignores GIT_WORK_TREE without GIT_DIR", () => {
+  const outer = makeNestedWorkspace("directory");
+  assert.equal(resolveWorkspaceRoot(outer.nested, { GIT_WORK_TREE: "/tmp/unrelated" }), outer.workspace);
+});
+
+test("resolveWorkspaceRoot ignores an environment work tree with a missing GIT_DIR", () => {
+  const outer = makeNestedWorkspace("directory");
+  assert.equal(
+    resolveWorkspaceRoot(outer.nested, { GIT_DIR: "missing.git", GIT_WORK_TREE: "../.." }),
+    outer.workspace
+  );
+});
+
 test("resolveWorkspaceRoot discovers a checkout without starting a child process", () => {
   const { workspace, nested } = makeNestedWorkspace("directory");
   const originalSpawnSync = childProcess.spawnSync;
