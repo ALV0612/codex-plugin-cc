@@ -49,18 +49,20 @@ test("readStdinIfPiped resets the transient retry budget after each successful c
   assert.deepEqual(waits, Array(10).fill(10));
 });
 
-test("readStdinIfPiped treats EWOULDBLOCK as transient and bounds backoff", () => {
-  const error = transient("EWOULDBLOCK");
+test("readStdinIfPiped keeps retrying transient reads until an open pipe progresses", () => {
   const waits = [];
-  assert.throws(() => readStdinIfPiped({
+  const steps = Array(20).fill(null).flatMap(() => [transient("EWOULDBLOCK")]);
+  steps.push("eventual-data", null);
+  const input = readStdinIfPiped({
     stdin: { isTTY: false },
-    readSync() { throw error; },
+    readSync: scriptedRead(steps),
     waitForRetry: (delay) => waits.push(delay),
-    maxAttempts: 5,
     initialRetryDelayMs: 10,
     maxRetryDelayMs: 25
-  }), (actual) => actual === error);
-  assert.deepEqual(waits, [10, 20, 25, 25]);
+  });
+  assert.equal(input, "eventual-data");
+  assert.deepEqual(waits.slice(0, 5), [10, 20, 25, 25, 25]);
+  assert.equal(waits.length, 20);
 });
 
 test("readStdinIfPiped surfaces non-transient read errors without retrying", () => {

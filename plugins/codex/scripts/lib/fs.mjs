@@ -47,7 +47,6 @@ export function readStdinIfPiped({
   stdin = process.stdin,
   readSync = fs.readSync,
   waitForRetry = waitForStdinRetry,
-  maxAttempts = 8,
   initialRetryDelayMs = 10,
   maxRetryDelayMs = 500,
   chunkSize = STDIN_CHUNK_SIZE
@@ -63,7 +62,6 @@ export function readStdinIfPiped({
   }
 
   const chunks = [];
-  let transientAttempts = 0;
   let retryDelayMs = initialRetryDelayMs;
   while (true) {
     const chunk = Buffer.allocUnsafe(chunkSize);
@@ -73,11 +71,9 @@ export function readStdinIfPiped({
         return Buffer.concat(chunks).toString("utf8");
       }
       chunks.push(chunk.subarray(0, bytesRead));
-      transientAttempts = 0;
       retryDelayMs = initialRetryDelayMs;
     } catch (error) {
-      transientAttempts += 1;
-      if (!isTransientReadError(error) || transientAttempts >= maxAttempts) {
+      if (!isTransientReadError(error)) {
         throw error;
       }
       waitForRetry(retryDelayMs);
