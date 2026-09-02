@@ -1,153 +1,77 @@
-import fs from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { readStdinIfPiped } from "../plugins/codex/scripts/lib/fs.mjs";
 
-function readOptions(overrides = {}) {
-  return {
-    stdin: { isTTY: false },
-    readFileSync() {
-      return "piped prompt";
-    },
-    waitForRetry() {
-      throw new Error("unexpected retry wait");
-    },
-    ...overrides
+function scriptedRead(steps, events = []) {
+  return (fd, buffer, offset, length, position) => {
+    events.push(["read", fd, offset, length, position]);
+    const step = steps.shift();
+    if (step instanceof Error) throw step;
+    if (step == null) return 0;
+    const bytes = Buffer.from(step);
+    bytes.copy(buffer, offset);
+    return bytes.length;
   };
 }
 
-test("readStdinIfPiped recovers when a non-blocking read is transiently unavailable", (context) => {
-  const transientError = Object.assign(new Error("resource temporarily unavailable"), {
-    code: "EAGAIN"
-  });
+function transient(code = "EAGAIN") {
+  return Object.assign(new Error("resource temporarily unavailable"), { code });
+}
+
+test("readStdinIfPiped preserves bytes consumed before a transient read failure", () => {
   const events = [];
-  let reads = 0;
-
-  context.mock.method(fs, "readFileSync", (fd, encoding) => {
-    events.push(["read", fd, encoding]);
-    reads += 1;
-    if (reads === 1) {
-      throw transientError;
-    }
-    return "deterministic piped prompt";
-  });
-
   const input = readStdinIfPiped({
-    stdin: {
-      isTTY: false,
-      _handle: {
-        setBlocking(value) {
-          events.push(["setBlocking", value]);
-        }
-      }
-    },
-    waitForRetry(delayMs) {
-      events.push(["wait", delayMs]);
-    }
+    stdin: { isTTY: false, _handle: { setBlocking: (value) => events.push(["blocking", value]) } },
+    readSync: scriptedRead(["first-", transient(), "second\n", null], events),
+    waitForRetry: (delay) => events.push(["wait", delay]),
+    chunkSize: 32
   });
-
-  assert.equal(input, "deterministic piped prompt");
-  assert.deepEqual(events, [
-    ["setBlocking", true],
-    ["read", 0, "utf8"],
-    ["wait", 10],
-    ["read", 0, "utf8"]
-  ]);
+  assert.equal(input, "first-second\n");
+  assert.deepEqual(events[0], ["blocking", true]);
+  assert.deepEqual(events.filter((event) => event[0] === "wait"), [["wait", 10]]);
 });
 
 test("readStdinIfPiped treats EWOULDBLOCK as transient and bounds backoff", () => {
-  const transientError = Object.assign(new Error("would block"), {
-    code: "EWOULDBLOCK"
-  });
+  const error = transient("EWOULDBLOCK");
   const waits = [];
-  let reads = 0;
-
-  assert.throws(
-    () =>
-      readStdinIfPiped(
-        readOptions({
-          readFileSync() {
-            reads += 1;
-            throw transientError;
-          },
-          waitForRetry(delayMs) {
-            waits.push(delayMs);
-          },
-          maxAttempts: 5,
-          initialRetryDelayMs: 10,
-          maxRetryDelayMs: 25
-        })
-      ),
-    (error) => error === transientError
-  );
-  assert.equal(reads, 5);
+  assert.throws(() => readStdinIfPiped({
+    stdin: { isTTY: false },
+    readSync() { throw error; },
+    waitForRetry: (delay) => waits.push(delay),
+    maxAttempts: 5,
+    initialRetryDelayMs: 10,
+    maxRetryDelayMs: 25
+  }), (actual) => actual === error);
   assert.deepEqual(waits, [10, 20, 25, 25]);
 });
 
 test("readStdinIfPiped surfaces non-transient read errors without retrying", () => {
-  const readError = Object.assign(new Error("bad descriptor"), { code: "EBADF" });
-  let reads = 0;
-
-  assert.throws(
-    () =>
-      readStdinIfPiped(
-        readOptions({
-          readFileSync() {
-            reads += 1;
-            throw readError;
-          }
-        })
-      ),
-    (error) => error === readError
-  );
-  assert.equal(reads, 1);
+  const error = Object.assign(new Error("bad descriptor"), { code: "EBADF" });
+  let waits = 0;
+  assert.throws(() => readStdinIfPiped({
+    stdin: { isTTY: false },
+    readSync() { throw error; },
+    waitForRetry() { waits += 1; }
+  }), (actual) => actual === error);
+  assert.equal(waits, 0);
 });
 
-test("readStdinIfPiped ignores unsupported blocking mode and reads the pipe", () => {
-  let reads = 0;
-  const input = readStdinIfPiped(
-    readOptions({
-      stdin: {
-        isTTY: false,
-        _handle: {
-          setBlocking() {
-            throw new Error("not supported");
-          }
-        }
-      },
-      readFileSync(fd, encoding) {
-        reads += 1;
-        assert.equal(fd, 0);
-        assert.equal(encoding, "utf8");
-        return "ordinary pipe";
-      }
-    })
-  );
-
+test("readStdinIfPiped ignores unsupported blocking mode and reads all chunks", () => {
+  const input = readStdinIfPiped({
+    stdin: { isTTY: false, _handle: { setBlocking() { throw new Error("unsupported"); } } },
+    readSync: scriptedRead(["ordinary ", "pipe", null]),
+    waitForRetry() { throw new Error("unexpected retry"); }
+  });
   assert.equal(input, "ordinary pipe");
-  assert.equal(reads, 1);
 });
 
 test("readStdinIfPiped returns empty input for a TTY without touching fd 0", () => {
-  let setBlockingCalls = 0;
-
-  const input = readStdinIfPiped(
-    readOptions({
-      stdin: {
-        isTTY: true,
-        _handle: {
-          setBlocking() {
-            setBlockingCalls += 1;
-          }
-        }
-      },
-      readFileSync() {
-        throw new Error("TTY stdin must not be read");
-      }
-    })
-  );
-
+  let reads = 0;
+  const input = readStdinIfPiped({
+    stdin: { isTTY: true },
+    readSync() { reads += 1; return 0; }
+  });
   assert.equal(input, "");
-  assert.equal(setBlockingCalls, 0);
+  assert.equal(reads, 0);
 });

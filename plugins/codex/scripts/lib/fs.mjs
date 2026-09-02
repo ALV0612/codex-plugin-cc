@@ -33,6 +33,7 @@ export function isProbablyText(buffer) {
 }
 
 const stdinRetryWaitArray = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+const STDIN_CHUNK_SIZE = 64 * 1024;
 
 function waitForStdinRetry(delayMs) {
   Atomics.wait(stdinRetryWaitArray, 0, 0, delayMs);
@@ -44,11 +45,12 @@ function isTransientReadError(error) {
 
 export function readStdinIfPiped({
   stdin = process.stdin,
-  readFileSync = fs.readFileSync,
+  readSync = fs.readSync,
   waitForRetry = waitForStdinRetry,
   maxAttempts = 8,
   initialRetryDelayMs = 10,
-  maxRetryDelayMs = 500
+  maxRetryDelayMs = 500,
+  chunkSize = STDIN_CHUNK_SIZE
 } = {}) {
   if (stdin.isTTY) {
     return "";
@@ -60,18 +62,24 @@ export function readStdinIfPiped({
     // Some stdin handle types do not support changing blocking mode.
   }
 
+  const chunks = [];
+  let transientAttempts = 0;
   let retryDelayMs = initialRetryDelayMs;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  while (true) {
+    const chunk = Buffer.allocUnsafe(chunkSize);
     try {
-      return readFileSync(0, "utf8");
+      const bytesRead = readSync(0, chunk, 0, chunk.length, null);
+      if (bytesRead === 0) {
+        return Buffer.concat(chunks).toString("utf8");
+      }
+      chunks.push(chunk.subarray(0, bytesRead));
     } catch (error) {
-      if (!isTransientReadError(error) || attempt === maxAttempts) {
+      transientAttempts += 1;
+      if (!isTransientReadError(error) || transientAttempts >= maxAttempts) {
         throw error;
       }
       waitForRetry(retryDelayMs);
       retryDelayMs = Math.min(retryDelayMs * 2, maxRetryDelayMs);
     }
   }
-
-  throw new Error("Unreachable stdin read state.");
 }
