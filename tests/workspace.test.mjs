@@ -35,9 +35,13 @@ test("resolveWorkspaceRoot honors an environment-configured work tree without a 
   );
 });
 
-test("resolveWorkspaceRoot ignores GIT_WORK_TREE without GIT_DIR", () => {
+test("resolveWorkspaceRoot honors GIT_WORK_TREE alone after finding the current repository", () => {
   const outer = makeNestedWorkspace("directory");
-  assert.equal(resolveWorkspaceRoot(outer.nested, { GIT_WORK_TREE: "/tmp/unrelated" }), outer.workspace);
+  const configuredWorktree = makeTempDir();
+  assert.equal(
+    resolveWorkspaceRoot(outer.nested, { GIT_WORK_TREE: configuredWorktree }),
+    fs.realpathSync.native(configuredWorktree)
+  );
 });
 
 test("resolveWorkspaceRoot ignores an environment work tree with a missing GIT_DIR", () => {
@@ -46,6 +50,27 @@ test("resolveWorkspaceRoot ignores an environment work tree with a missing GIT_D
     resolveWorkspaceRoot(outer.nested, { GIT_DIR: "missing.git", GIT_WORK_TREE: "../.." }),
     outer.workspace
   );
+});
+
+test("resolveWorkspaceRoot follows a gitfile supplied through GIT_DIR", () => {
+  const cwd = makeTempDir();
+  const metadata = makeTempDir();
+  const gitDirectory = path.join(metadata, "actual.git");
+  const gitfile = path.join(metadata, "linked.git");
+  const worktree = makeTempDir();
+  fs.mkdirSync(gitDirectory);
+  fs.writeFileSync(gitfile, "gitdir: actual.git\n", "utf8");
+
+  assert.equal(
+    resolveWorkspaceRoot(cwd, { GIT_DIR: gitfile, GIT_WORK_TREE: worktree }),
+    fs.realpathSync.native(worktree)
+  );
+});
+
+test("resolveWorkspaceRoot ignores GIT_WORK_TREE alone outside a repository", () => {
+  const cwd = makeTempDir();
+  const configuredWorktree = makeTempDir();
+  assert.equal(resolveWorkspaceRoot(cwd, { GIT_WORK_TREE: configuredWorktree }), cwd);
 });
 
 test("resolveWorkspaceRoot discovers a checkout without starting a child process", () => {
