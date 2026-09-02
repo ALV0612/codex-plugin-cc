@@ -9,8 +9,10 @@ export function resolveWorkspaceRoot(cwd) {
 
     while (true) {
       try {
-        const markerStats = fs.statSync(path.join(current, ".git"));
-        if (markerStats.isDirectory() || markerStats.isFile()) {
+        const markerPath = path.join(current, ".git");
+        const markerStats = fs.statSync(markerPath);
+        const validGitFile = markerStats.isFile() && /^gitdir:\s*\S/m.test(fs.readFileSync(markerPath, "utf8"));
+        if (markerStats.isDirectory() || validGitFile) {
           return fs.realpathSync.native(current);
         }
       } catch (error) {

@@ -43,6 +43,16 @@ test("resolveWorkspaceRoot accepts a linked-worktree gitfile", () => {
   assert.equal(resolveWorkspaceRoot(nested), workspace);
 });
 
+test("resolveWorkspaceRoot ignores an ordinary file named .git", () => {
+  const outer = makeNestedWorkspace("directory");
+  const nestedWorkspace = path.join(outer.workspace, "vendor", "not-a-repo");
+  const cwd = path.join(nestedWorkspace, "src");
+  fs.mkdirSync(cwd, { recursive: true });
+  fs.writeFileSync(path.join(nestedWorkspace, ".git"), "not a gitfile\n", "utf8");
+
+  assert.equal(resolveWorkspaceRoot(cwd), outer.workspace);
+});
+
 test("resolveWorkspaceRoot follows a symlinked git directory", () => {
   const workspace = makeTempDir();
   const gitDirectory = makeTempDir();
