@@ -52,6 +52,31 @@ test("resolveWorkspaceRoot ignores an environment work tree with a missing GIT_D
   );
 });
 
+test("resolveWorkspaceRoot uses invocation directory for GIT_DIR alone", () => {
+  const outer = makeNestedWorkspace("directory");
+  const gitDirectory = makeTempDir();
+  assert.equal(resolveWorkspaceRoot(outer.nested, { GIT_DIR: gitDirectory }), fs.realpathSync.native(outer.nested));
+});
+
+test("resolveWorkspaceRoot honors core.worktree from GIT_DIR config", () => {
+  const cwd = makeTempDir();
+  const gitDirectory = makeTempDir();
+  const worktree = makeTempDir();
+  fs.writeFileSync(path.join(gitDirectory, "config"), `[core]\n  worktree = ${worktree}\n`, "utf8");
+  assert.equal(resolveWorkspaceRoot(cwd, { GIT_DIR: gitDirectory }), fs.realpathSync.native(worktree));
+});
+
+test("resolveWorkspaceRoot honors core.worktree from a marker git directory", () => {
+  const metadata = makeTempDir();
+  const gitDirectory = path.join(metadata, ".git");
+  const nested = path.join(metadata, "sub");
+  const worktree = makeTempDir();
+  fs.mkdirSync(gitDirectory);
+  fs.mkdirSync(nested);
+  fs.writeFileSync(path.join(gitDirectory, "config"), `[core]\n  worktree = ${worktree}\n`, "utf8");
+  assert.equal(resolveWorkspaceRoot(nested, {}), fs.realpathSync.native(worktree));
+});
+
 test("resolveWorkspaceRoot follows a gitfile supplied through GIT_DIR", () => {
   const cwd = makeTempDir();
   const metadata = makeTempDir();
@@ -105,7 +130,7 @@ test("resolveWorkspaceRoot ignores an ordinary file named .git", () => {
   assert.equal(resolveWorkspaceRoot(cwd), outer.workspace);
 });
 
-for (const invalidMarker of ["gitdir:/tmp/metadata\n", "gitdir:\t/tmp/metadata\n", "metadata\ngitdir: /tmp/metadata\n", "gitdir: missing.git\n"]) {
+for (const invalidMarker of ["gitdir:/tmp/metadata\n", "gitdir:\t/tmp/metadata\n", "metadata\ngitdir: /tmp/metadata\n", "gitdir: missing.git\n", "gitdir: metadata.git\ntrailing-data"]) {
   test(`resolveWorkspaceRoot rejects malformed gitfile ${JSON.stringify(invalidMarker)}`, () => {
     const outer = makeNestedWorkspace("directory");
     const nestedWorkspace = path.join(outer.workspace, "vendor", "not-a-repo");

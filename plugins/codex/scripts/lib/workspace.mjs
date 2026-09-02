@@ -1,21 +1,55 @@
 import fs from "node:fs";
 import path from "node:path";
 
-function resolvesToGitDirectory(candidatePath) {
+function resolveGitDirectory(candidatePath) {
   const candidateStats = fs.statSync(candidatePath);
   if (candidateStats.isDirectory()) {
-    return true;
+    return fs.realpathSync.native(candidatePath);
   }
   if (!candidateStats.isFile()) {
-    return false;
+    return null;
   }
 
-  const match = /^gitdir: (.+?)(?:\r?\n|$)/.exec(fs.readFileSync(candidatePath, "utf8"));
+  const match = /^gitdir: ([^\r\n]+)\r?\n?$/.exec(fs.readFileSync(candidatePath, "utf8"));
   if (!match) {
-    return false;
+    return null;
   }
   const target = path.resolve(path.dirname(candidatePath), match[1]);
-  return fs.statSync(target).isDirectory();
+  return fs.statSync(target).isDirectory() ? fs.realpathSync.native(target) : null;
+}
+
+function readConfiguredWorkTree(gitDirectory) {
+  const configPath = path.join(gitDirectory, "config");
+  let section = "";
+  for (const rawLine of fs.readFileSync(configPath, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || line.startsWith(";")) {
+      continue;
+    }
+    const sectionMatch = /^\[([^\]]+)\]$/.exec(line);
+    if (sectionMatch) {
+      section = sectionMatch[1].trim().toLowerCase();
+      continue;
+    }
+    if (section !== "core") {
+      continue;
+    }
+    const valueMatch = /^worktree\s*=\s*(.+)$/i.exec(line);
+    if (valueMatch) {
+      const value = valueMatch[1].trim().replace(/^(?:"(.*)"|'(.*)')$/, "$1$2");
+      return path.resolve(gitDirectory, value);
+    }
+  }
+  return null;
+}
+
+function configuredWorkTree(gitDirectory) {
+  try {
+    const workTree = readConfiguredWorkTree(gitDirectory);
+    return workTree && fs.statSync(workTree).isDirectory() ? fs.realpathSync.native(workTree) : null;
+  } catch {
+    return null;
+  }
 }
 
 function findMarkerWorkspace(canonicalCwd) {
@@ -24,8 +58,9 @@ function findMarkerWorkspace(canonicalCwd) {
 
   while (true) {
     try {
-      if (resolvesToGitDirectory(path.join(current, ".git"))) {
-        return fs.realpathSync.native(current);
+      const gitDirectory = resolveGitDirectory(path.join(current, ".git"));
+      if (gitDirectory) {
+        return { workspace: fs.realpathSync.native(current), gitDirectory };
       }
     } catch (error) {
       if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") {
@@ -44,24 +79,38 @@ function findMarkerWorkspace(canonicalCwd) {
 export function resolveWorkspaceRoot(cwd, env = process.env) {
   try {
     const canonicalCwd = fs.realpathSync.native(cwd);
-    const markerWorkspace = findMarkerWorkspace(canonicalCwd);
+    const invocationDirectory = fs.statSync(canonicalCwd).isFile() ? path.dirname(canonicalCwd) : canonicalCwd;
+    const marker = findMarkerWorkspace(canonicalCwd);
 
-    if (env?.GIT_WORK_TREE) {
+    if (env?.GIT_DIR) {
       try {
-        const configuredWorkTree = path.resolve(cwd, env.GIT_WORK_TREE);
-        const configuredGitDirectory = env.GIT_DIR ? path.resolve(cwd, env.GIT_DIR) : null;
-        const hasRepository = configuredGitDirectory
-          ? resolvesToGitDirectory(configuredGitDirectory)
-          : Boolean(markerWorkspace);
-        if (hasRepository && fs.statSync(configuredWorkTree).isDirectory()) {
-          return fs.realpathSync.native(configuredWorkTree);
+        const gitDirectory = resolveGitDirectory(path.resolve(cwd, env.GIT_DIR));
+        if (gitDirectory) {
+          const workTree = env.GIT_WORK_TREE
+            ? path.resolve(cwd, env.GIT_WORK_TREE)
+            : configuredWorkTree(gitDirectory) ?? invocationDirectory;
+          if (fs.statSync(workTree).isDirectory()) {
+            return fs.realpathSync.native(workTree);
+          }
+        }
+      } catch {
+        // Invalid Git environment overrides do not suppress normal marker discovery.
+      }
+    } else if (env?.GIT_WORK_TREE && marker) {
+      try {
+        const workTree = path.resolve(cwd, env.GIT_WORK_TREE);
+        if (fs.statSync(workTree).isDirectory()) {
+          return fs.realpathSync.native(workTree);
         }
       } catch {
         // Invalid Git environment overrides do not suppress normal marker discovery.
       }
     }
 
-    return markerWorkspace ?? cwd;
+    if (marker) {
+      return configuredWorkTree(marker.gitDirectory) ?? marker.workspace;
+    }
+    return cwd;
   } catch {
     return cwd;
   }
