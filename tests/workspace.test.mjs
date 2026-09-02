@@ -53,7 +53,7 @@ test("resolveWorkspaceRoot ignores an ordinary file named .git", () => {
   assert.equal(resolveWorkspaceRoot(cwd), outer.workspace);
 });
 
-for (const invalidMarker of ["gitdir:/tmp/metadata\n", "metadata\ngitdir: /tmp/metadata\n"]) {
+for (const invalidMarker of ["gitdir:/tmp/metadata\n", "gitdir:\t/tmp/metadata\n", "metadata\ngitdir: /tmp/metadata\n"]) {
   test(`resolveWorkspaceRoot rejects malformed gitfile ${JSON.stringify(invalidMarker)}`, () => {
     const outer = makeNestedWorkspace("directory");
     const nestedWorkspace = path.join(outer.workspace, "vendor", "not-a-repo");
