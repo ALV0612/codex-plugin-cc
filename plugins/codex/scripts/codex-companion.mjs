@@ -6,7 +6,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { parseArgs, splitRawArgumentString } from "./lib/args.mjs";
+import { parseArgs, splitRawArgumentString, splitRawArgumentStringWithSpans } from "./lib/args.mjs";
 import {
     buildPersistentTaskThreadName,
     DEFAULT_CONTINUE_PROMPT,
@@ -139,16 +139,12 @@ function normalizeArgv(argv) {
 }
 
 function normalizeAdversarialReviewArgv(argv) {
-  if (argv.length !== 1) {
-    return argv;
-  }
+  if (argv.length !== 1) return argv;
 
   const [raw] = argv;
-  if (!raw || !raw.trim()) {
-    return [];
-  }
+  if (!raw || !raw.trim()) return [];
 
-  const tokens = splitRawArgumentString(raw);
+  const tokens = splitRawArgumentStringWithSpans(raw);
   const normalized = [];
   const valueOptions = new Set(["base", "scope", "model", "cwd"]);
   const booleanOptions = new Set(["json", "background", "wait"]);
@@ -156,44 +152,40 @@ function normalizeAdversarialReviewArgv(argv) {
 
   for (let index = 0; index < tokens.length;) {
     const token = tokens[index];
-    if (token === "--") {
-      normalized.push(token);
-      if (index + 1 < tokens.length) {
-        normalized.push(tokens.slice(index + 1).join(" "));
-      }
+    if (token.value === "--") {
+      const focusStart = tokens[index + 1]?.start;
+      if (focusStart !== undefined) normalized.push("--", raw.slice(focusStart));
       return normalized;
     }
 
     let key = null;
     let hasInlineValue = false;
-    if (token.startsWith("--")) {
-      const [rawKey, inlineValue] = token.slice(2).split("=", 2);
+    if (token.value.startsWith("--")) {
+      const [rawKey, inlineValue] = token.value.slice(2).split("=", 2);
       key = aliasMap[rawKey] ?? rawKey;
       hasInlineValue = inlineValue !== undefined;
-    } else if (token.startsWith("-") && token !== "-") {
-      key = aliasMap[token.slice(1)] ?? token.slice(1);
+    } else if (token.value.startsWith("-") && token.value !== "-") {
+      key = aliasMap[token.value.slice(1)] ?? token.value.slice(1);
     }
 
     if (booleanOptions.has(key)) {
-      normalized.push(token);
+      normalized.push(token.value);
       index += 1;
       continue;
     }
-
     if (valueOptions.has(key)) {
-      normalized.push(token);
+      normalized.push(token.value);
       index += 1;
       if (!hasInlineValue && index < tokens.length) {
-        normalized.push(tokens[index]);
+        normalized.push(tokens[index].value);
         index += 1;
       }
       continue;
     }
 
-    normalized.push(tokens.slice(index).join(" "));
+    normalized.push(raw.slice(token.start));
     return normalized;
   }
-
   return normalized;
 }
 

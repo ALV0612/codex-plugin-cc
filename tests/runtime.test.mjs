@@ -409,6 +409,24 @@ test("adversarial review keeps long option examples in a single focus argument",
   assert.match(fakeState.lastTurnStart.prompt, new RegExp(focus.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("adversarial review preserves backslashes, quotes, and whitespace in focus text", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  const focus = 'Review C:\\temp\\foo and keep "quoted  spacing" exactly';
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+
+  const result = run("node", [SCRIPT, "adversarial-review", focus], { cwd: repo, env: buildEnv(binDir) });
+  assert.equal(result.status, 0, result.stderr);
+  const prompt = JSON.parse(fs.readFileSync(statePath, "utf8")).lastTurnStart.prompt;
+  assert.match(prompt, new RegExp(focus.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
 test("adversarial review accepts the same base-branch targeting as review", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();

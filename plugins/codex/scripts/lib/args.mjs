@@ -77,13 +77,15 @@ export function parseArgs(argv, config = {}) {
   return { options, positionals };
 }
 
-export function splitRawArgumentString(raw) {
+export function splitRawArgumentStringWithSpans(raw) {
   const tokens = [];
   let current = "";
   let quote = null;
   let escaping = false;
+  let tokenStart = null;
 
-  for (const character of raw) {
+  for (let index = 0; index < raw.length; index += 1) {
+    const character = raw[index];
     if (escaping) {
       current += character;
       escaping = false;
@@ -91,6 +93,7 @@ export function splitRawArgumentString(raw) {
     }
 
     if (character === "\\") {
+      tokenStart ??= index;
       escaping = true;
       continue;
     }
@@ -105,28 +108,29 @@ export function splitRawArgumentString(raw) {
     }
 
     if (character === "'" || character === "\"") {
+      tokenStart ??= index;
       quote = character;
       continue;
     }
 
     if (/\s/.test(character)) {
-      if (current) {
-        tokens.push(current);
+      if (tokenStart !== null) {
+        tokens.push({ value: current, start: tokenStart, end: index });
         current = "";
+        tokenStart = null;
       }
       continue;
     }
 
+    tokenStart ??= index;
     current += character;
   }
 
-  if (escaping) {
-    current += "\\";
-  }
-
-  if (current) {
-    tokens.push(current);
-  }
-
+  if (escaping) current += "\\";
+  if (tokenStart !== null) tokens.push({ value: current, start: tokenStart, end: raw.length });
   return tokens;
+}
+
+export function splitRawArgumentString(raw) {
+  return splitRawArgumentStringWithSpans(raw).map((token) => token.value);
 }
